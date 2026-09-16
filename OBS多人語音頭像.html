@@ -1,0 +1,1656 @@
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>OBS 多人語音頭像</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --green: #16a368;
+      --green-dark: #0d7d4e;
+      --blue: #3578e5;
+      --red: #d94a4a;
+      --ink: #263238;
+      --muted: #718078;
+      --line: #dce8e1;
+      --panel: #ffffff;
+      --soft: #f3f8f5;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; }
+    body {
+      min-height: 100vh;
+      overflow: auto;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+      color: var(--ink);
+      background: transparent;
+    }
+
+    [hidden] { display: none !important; }
+
+    #stage {
+      width: max-content;
+      min-height: 300px;
+      margin: 0 auto;
+      display: grid;
+      justify-content: center;
+      align-content: start;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .participant {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .participant img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .participant img.active { opacity: 1; }
+
+    .peer-label {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      z-index: 5;
+      display: none;
+      padding: 3px 7px;
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(0, 0, 0, .66);
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
+
+    body.settings-open #stage {
+      background-color: #f5f5f5;
+      background-image:
+        linear-gradient(45deg, #e7e7e7 25%, transparent 25%),
+        linear-gradient(-45deg, #e7e7e7 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e7e7e7 75%),
+        linear-gradient(-45deg, transparent 75%, #e7e7e7 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    }
+
+    body.settings-open .participant { outline: 1px dashed rgba(22, 163, 104, .4); }
+    body.settings-open .peer-label { display: block; }
+
+    #settingsOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(20, 32, 26, .58);
+      backdrop-filter: blur(3px);
+    }
+
+    #settingsPanel {
+      width: min(920px, 100%);
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: 0 22px 70px rgba(0, 0, 0, .28);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    h1 { margin: 0; color: var(--green-dark); font-size: 21px; }
+    h2 {
+      margin: 20px 0 10px;
+      padding-left: 9px;
+      border-left: 4px solid var(--green);
+      color: var(--green-dark);
+      font-size: 15px;
+    }
+
+    .hint, .copyright { color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .seed-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+    label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; }
+    input, button, select { font: inherit; }
+    input[type="text"], input[type="number"], input[type="password"], select {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid #cad8d0;
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+    }
+    input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(22, 163, 104, .12); }
+    input[readonly] { background: var(--soft); }
+
+    .layout-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 18px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+    }
+    .layout-controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+    .layout-controls select { min-width: 150px; }
+    .source-panel {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+    .source-panel .grid { margin-bottom: 8px; }
+    .wide-field { grid-column: 1 / -1; }
+
+    .peer-address {
+      display: grid;
+      grid-template-columns: 25px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #f8fbf9;
+      transition: background .18s, color .18s, border-color .18s;
+    }
+    .peer-address .address-number { text-align: center; color: var(--muted); font-size: 11px; font-weight: 800; }
+    .peer-address .address-state { min-width: 48px; color: var(--muted); font-size: 10px; font-weight: 800; text-align: center; }
+    .peer-address.connecting { border-color: #d6a23b; background: #fff7e7; }
+    .peer-address.used { border-color: #1c3328; color: #fff; background: #23372d; }
+    .peer-address.used .address-number, .peer-address.used .address-state { color: #cce8d8; }
+    .peer-address.used input { color: #fff; border-color: #4f6b5d; background: #18271f; }
+    .peer-address input:disabled { cursor: default; opacity: 1; }
+
+    .code-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--green);
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:hover { background: var(--green-dark); }
+    button.secondary { color: var(--green-dark); border: 1px solid #bcd8c9; background: #eef8f2; }
+    button.secondary:hover { background: #def1e6; }
+    button.close { width: 38px; min-width: 38px; padding: 0; color: #5b6861; background: #edf2ef; font-size: 22px; }
+
+    .image-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .image-card {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+    .image-card strong { display: block; color: var(--green-dark); font-size: 13px; }
+    .thumb {
+      width: 100%;
+      aspect-ratio: 1;
+      margin: 8px 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px dashed #b9cfc2;
+      border-radius: 8px;
+      color: #90a097;
+      background: #fff;
+      font-size: 12px;
+    }
+    .thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .image-card input[type="file"] { width: 100%; color: var(--muted); font-size: 11px; }
+    .threshold-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
+    .threshold-row input { min-height: 34px; text-align: center; }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .status-box { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fafcfb; font-size: 12px; }
+    .dot { display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: #9aa7a0; }
+    .dot.ok { background: #18a765; box-shadow: 0 0 0 3px rgba(24, 167, 101, .14); }
+    .dot.wait { background: #e9a62e; }
+    .dot.bad { background: var(--red); }
+    #message { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    #connections { margin-top: 8px; color: var(--muted); font-size: 11px; word-break: break-word; }
+    .copyright { margin-top: 16px; text-align: center; }
+
+    @media (max-width: 760px) {
+      #settingsPanel { padding: 15px; }
+      .grid, .seed-grid, .status-grid { grid-template-columns: 1fr; }
+      .image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-label="多人語音頭像；點一下開啟設定"></main>
+
+  <div id="settingsOverlay" hidden>
+    <section id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="panel-head">
+        <div>
+          <h1 id="settingsTitle">OBS 多人語音頭像</h1>
+          <div class="hint">自己 1 位＋他人最多 9 位、無主持端。關閉設定後，點頁面任意位置可再次叫出。</div>
+        </div>
+        <button id="closeBtn" class="close" type="button" title="關閉設定">×</button>
+      </div>
+
+      <h2>音軌來源</h2>
+      <label class="field">使用來源
+        <select id="audioMode">
+          <option value="obs">OBS WebSocket 音軌</option>
+          <option value="mic">非 OBS 麥克風／手機麥克風</option>
+        </select>
+      </label>
+
+      <div id="obsControls" class="source-panel">
+        <div class="grid">
+          <label class="field">IP
+            <input id="obsHost" type="text" value="127.0.0.1" autocomplete="off">
+          </label>
+          <label class="field">連接埠
+            <input id="obsPort" type="number" value="4455" min="1" max="65535">
+          </label>
+          <label class="field">密碼
+            <input id="obsPassword" type="password" value="123456789" autocomplete="off">
+          </label>
+          <label class="field wide-field">OBS 音軌
+            <select id="obsTrack">
+              <option value="">自動抓目前音量最大的音軌</option>
+            </select>
+          </label>
+        </div>
+        <div class="button-row">
+          <button id="obsConnectBtn" type="button">連線 OBS</button>
+        </div>
+        <div class="hint">連線後會從 OBS 混音器取得音軌清單；可指定一軌，或保留自動模式。</div>
+      </div>
+
+      <div id="micControls" class="source-panel" hidden>
+        <label class="field">非 OBS 音軌
+          <select id="micDevice">
+            <option value="">系統預設麥克風</option>
+          </select>
+        </label>
+        <div class="button-row">
+          <button id="micConnectBtn" type="button">啟用選擇的麥克風</button>
+          <button id="refreshMicBtn" class="secondary" type="button">重新讀取裝置</button>
+        </div>
+        <div class="hint">可使用第二支 USB 麥克風或手機內建麥克風。第一次啟用時，瀏覽器會要求麥克風權限。</div>
+      </div>
+
+      <h2>排列方式</h2>
+      <div class="layout-controls">
+        <label>排列
+          <select id="layoutMode">
+            <option value="horizontal">橫排</option>
+            <option value="vertical">縱排</option>
+            <option value="double-horizontal" selected>雙橫排</option>
+            <option value="double-vertical">雙縱排</option>
+          </select>
+        </label>
+        <label><input id="localLarge" type="checkbox">本人放大</label>
+        <label><input id="localLeft" type="checkbox">本人最左</label>
+        <label><input id="localRight" type="checkbox">本人最右</label>
+      </div>
+
+      <h2>自己的連接碼</h2>
+      <div class="code-row">
+        <input id="ownCode" type="text" readonly aria-label="自己的連接碼">
+        <button id="copyCodeBtn" type="button">複製</button>
+      </div>
+
+      <h2>他人連接碼（9 個位址）</h2>
+      <div class="seed-grid">
+        <div class="peer-address"><span class="address-number">1</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">2</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">3</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">4</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">5</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">6</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">7</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">8</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+        <div class="peer-address"><span class="address-number">9</span><input class="seed-code" type="text" maxlength="8" placeholder="未使用" autocomplete="off"><span class="address-state">未使用</span></div>
+      </div>
+      <div class="button-row">
+        <button id="connectBtn" type="button">連線</button>
+      </div>
+      <div class="hint">輸入的連接碼成功後會反黑顯示「使用中」。別人用你的連接碼連進來時，也會自動占用第一個空位。</div>
+
+      <h2>本機四張圖片與趴數</h2>
+      <div class="image-grid">
+        <div class="image-card" data-slot="1">
+          <strong>圖片 1／P1</strong>
+          <div class="thumb"><span>尚未載入</span><img hidden alt="P1 縮圖"></div>
+          <input class="image-input" type="file" accept="image/*">
+          <label class="threshold-row"><span>趴數</span><input class="threshold" type="number" min="0" max="100" value="0"><span>%</span></label>
+        </div>
+        <div class="image-card" data-slot="2">
+          <strong>圖片 2／P2</strong>
+          <div class="thumb"><span>尚未載入</span><img hidden alt="P2 縮圖"></div>
+          <input class="image-input" type="file" accept="image/*">
+          <label class="threshold-row"><span>趴數</span><input class="threshold" type="number" min="0" max="100" value="10"><span>%</span></label>
+        </div>
+        <div class="image-card" data-slot="3">
+          <strong>圖片 3／P3</strong>
+          <div class="thumb"><span>尚未載入</span><img hidden alt="P3 縮圖"></div>
+          <input class="image-input" type="file" accept="image/*">
+          <label class="threshold-row"><span>趴數</span><input class="threshold" type="number" min="0" max="100" value="50"><span>%</span></label>
+        </div>
+        <div class="image-card" data-slot="4">
+          <strong>圖片 4／P4</strong>
+          <div class="thumb"><span>尚未載入</span><img hidden alt="P4 縮圖"></div>
+          <input class="image-input" type="file" accept="image/*">
+          <label class="threshold-row"><span>趴數</span><input class="threshold" type="number" min="0" max="100" value="80"><span>%</span></label>
+        </div>
+      </div>
+      <div class="hint">選圖後立即縮成含透明留白的 300×300 縮圖；網頁只保留縮圖，不保留大圖資料。圖片首次連線或更新時才傳送，平時只傳 P1／P2／P3／P4。</div>
+
+      <div class="status-grid">
+        <div class="status-box"><span id="obsDot" class="dot"></span><span id="obsStatus">OBS 尚未連線</span></div>
+        <div class="status-box"><span id="peerDot" class="dot"></span><span id="peerStatus">WebRTC 準備中</span></div>
+      </div>
+      <div id="connections">目前成員：只有自己</div>
+      <div id="message"></div>
+
+      <div class="button-row">
+        <button id="saveBtn" type="button">儲存並隱藏</button>
+        <button id="hideBtn" class="secondary" type="button">直接隱藏</button>
+      </div>
+      <div class="copyright">© 2026 ANSHAER &amp; 早.cc &amp; anshaer.com All Rights Reserved.</div>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    const MAX_REMOTE_PEERS = 9;
+    const MAX_PARTICIPANTS = MAX_REMOTE_PEERS + 1;
+    const PEER_PREFIX = 'anshaer-avatar-';
+    const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const DB_NAME = 'anshaer-obs-avatar-v2';
+    const DB_STORE = 'files';
+    const CONFIG_KEY = 'anshaer-obs-avatar-config-v2';
+    const CODE_KEY = 'anshaer-obs-avatar-code-v2';
+    const CHUNK_SIZE = 12000;
+
+    const stage = document.getElementById('stage');
+    const overlay = document.getElementById('settingsOverlay');
+    const panel = document.getElementById('settingsPanel');
+    const ownCodeInput = document.getElementById('ownCode');
+    const obsDot = document.getElementById('obsDot');
+    const peerDot = document.getElementById('peerDot');
+    const obsStatus = document.getElementById('obsStatus');
+    const peerStatus = document.getElementById('peerStatus');
+    const connectionsText = document.getElementById('connections');
+    const message = document.getElementById('message');
+
+    const localImages = [null, null, null, null];
+    const localRevisions = [0, 0, 0, 0];
+    const remoteProfiles = new Map();
+    const connections = new Map();
+    const knownPeers = new Set();
+    const incomingImages = new Map();
+    const reconnectTimers = new Map();
+
+    let dbPromise = null;
+    let peer = null;
+    let peerReady = false;
+    let peerRestartTimer = 0;
+    let meshTimer = 0;
+    let obsSocket = null;
+    let obsReconnectTimer = 0;
+    let obsGeneration = 0;
+    let micStream = null;
+    let micAudioContext = null;
+    let micAnimationFrame = 0;
+    let knownObsTracks = new Set();
+    let localState = 1;
+    let ownCode = loadOwnCode();
+    let config = loadConfig();
+
+    function loadOwnCode() {
+      const saved = normalizeCode(localStorage.getItem(CODE_KEY) || '');
+      if (saved) return saved;
+      let code = '';
+      const random = new Uint32Array(8);
+      if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(random);
+      for (let i = 0; i < 8; i++) {
+        const value = random[i] || Math.floor(Math.random() * 0xffffffff);
+        code += CODE_CHARS[value % CODE_CHARS.length];
+      }
+      localStorage.setItem(CODE_KEY, code);
+      return code;
+    }
+
+    function loadConfig() {
+      const defaults = {
+        obsHost: '127.0.0.1',
+        obsPort: 4455,
+        obsPassword: '123456789',
+        audioMode: 'obs',
+        obsTrack: '',
+        micDevice: '',
+        thresholds: [0, 10, 50, 80],
+        seeds: ['', '', '', '', '', '', '', '', ''],
+        layout: 'double-horizontal',
+        localLarge: false,
+        localLeft: false,
+        localRight: false
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
+        return {
+          ...defaults,
+          ...saved,
+          thresholds: Array.isArray(saved.thresholds) ? saved.thresholds.slice(0, 4) : defaults.thresholds,
+          seeds: Array.isArray(saved.seeds) ? saved.seeds.slice(0, 9).concat(Array(9).fill('')).slice(0, 9) : defaults.seeds
+        };
+      } catch (_) {
+        return defaults;
+      }
+    }
+
+    function normalizeCode(value) {
+      const text = String(value || '').trim().toUpperCase().replace(PEER_PREFIX.toUpperCase(), '').replace(/[^A-Z0-9]/g, '');
+      return /^[A-Z0-9]{8}$/.test(text) ? text : '';
+    }
+
+    function fullPeerId(code) { return PEER_PREFIX + code.toLowerCase(); }
+    function codeFromPeerId(id) { return normalizeCode(String(id || '').replace(new RegExp('^' + PEER_PREFIX, 'i'), '')); }
+    function clamp(value, min, max) { return Math.min(max, Math.max(min, Number(value) || 0)); }
+
+    function setMessage(text, bad = false) {
+      message.textContent = text || '';
+      message.style.color = bad ? '#c33d3d' : '';
+    }
+
+    function setDot(dot, state) {
+      dot.className = 'dot' + (state ? ' ' + state : '');
+    }
+
+    function openSettings() {
+      overlay.hidden = false;
+      document.body.classList.add('settings-open');
+    }
+
+    function closeSettings() {
+      overlay.hidden = true;
+      document.body.classList.remove('settings-open');
+    }
+
+    function openDb() {
+      if (dbPromise) return dbPromise;
+      dbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error('瀏覽器不支援 IndexedDB'));
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('IndexedDB 開啟失敗'));
+      });
+      return dbPromise;
+    }
+
+    async function dbGet(key) {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const request = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function dbSet(key, value) {
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    function ensureSelectOption(select, value, label) {
+      if (!select || !value) return;
+      const exists = Array.from(select.options).some(option => option.value === value);
+      if (!exists) select.add(new Option(label || value, value));
+    }
+
+    function updateAudioModeUI() {
+      const mode = document.getElementById('audioMode').value === 'mic' ? 'mic' : 'obs';
+      document.getElementById('obsControls').hidden = mode !== 'obs';
+      document.getElementById('micControls').hidden = mode !== 'mic';
+    }
+
+    function restoreControls() {
+      ownCodeInput.value = ownCode;
+      document.getElementById('obsHost').value = config.obsHost;
+      document.getElementById('obsPort').value = config.obsPort;
+      document.getElementById('obsPassword').value = config.obsPassword;
+      document.getElementById('audioMode').value = config.audioMode === 'mic' ? 'mic' : 'obs';
+      ensureSelectOption(document.getElementById('obsTrack'), config.obsTrack, config.obsTrack ? config.obsTrack : '');
+      document.getElementById('obsTrack').value = config.obsTrack || '';
+      ensureSelectOption(document.getElementById('micDevice'), config.micDevice, config.micDevice ? '上次選擇的麥克風' : '');
+      document.getElementById('micDevice').value = config.micDevice || '';
+      document.getElementById('layoutMode').value = ['horizontal', 'vertical', 'double-horizontal', 'double-vertical'].includes(config.layout) ? config.layout : 'double-horizontal';
+      document.getElementById('localLarge').checked = Boolean(config.localLarge);
+      document.getElementById('localLeft').checked = Boolean(config.localLeft);
+      document.getElementById('localRight').checked = Boolean(config.localRight);
+      document.querySelectorAll('.threshold').forEach((input, index) => {
+        input.value = clamp(config.thresholds[index] ?? [0, 10, 50, 80][index], 0, 100);
+      });
+      document.querySelectorAll('.seed-code').forEach((input, index) => {
+        input.value = config.seeds[index] || '';
+      });
+      updateAddressSlots();
+      applyLayout();
+      updateAudioModeUI();
+    }
+
+    function readAndSaveControls() {
+      const thresholds = Array.from(document.querySelectorAll('.threshold'), input => clamp(input.value, 0, 100));
+      for (let i = 1; i < thresholds.length; i++) thresholds[i] = Math.max(thresholds[i], thresholds[i - 1]);
+      const seenSeeds = new Set();
+      const seeds = Array.from(document.querySelectorAll('.seed-code'), input => normalizeCode(input.value)).map(code => {
+        if (!code || code === ownCode || seenSeeds.has(code)) return '';
+        seenSeeds.add(code);
+        return code;
+      });
+      config = {
+        obsHost: String(document.getElementById('obsHost').value || '127.0.0.1').trim(),
+        obsPort: clamp(document.getElementById('obsPort').value || 4455, 1, 65535),
+        obsPassword: document.getElementById('obsPassword').value,
+        audioMode: document.getElementById('audioMode').value === 'mic' ? 'mic' : 'obs',
+        obsTrack: document.getElementById('obsTrack').value || '',
+        micDevice: document.getElementById('micDevice').value || '',
+        thresholds,
+        seeds,
+        layout: document.getElementById('layoutMode').value,
+        localLarge: document.getElementById('localLarge').checked,
+        localLeft: document.getElementById('localLeft').checked,
+        localRight: document.getElementById('localRight').checked
+      };
+      if (config.localLeft && config.localRight) config.localRight = false;
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+      restoreControls();
+    }
+
+    function persistConfig() {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    }
+
+    function assignAddress(code) {
+      code = normalizeCode(code);
+      if (!code) return -1;
+      let index = config.seeds.indexOf(code);
+      if (index < 0) index = config.seeds.findIndex(value => !value);
+      if (index < 0) return -1;
+      config.seeds[index] = code;
+      persistConfig();
+      const input = document.querySelectorAll('.seed-code')[index];
+      if (input) input.value = code;
+      updateAddressSlots();
+      return index;
+    }
+
+    function updateAddressSlots() {
+      const rows = document.querySelectorAll('.peer-address');
+      rows.forEach((row, index) => {
+        const input = row.querySelector('.seed-code');
+        const state = row.querySelector('.address-state');
+        const code = normalizeCode((config.seeds && config.seeds[index]) || input.value);
+        const conn = code ? connections.get(code) : null;
+        row.classList.remove('used', 'connecting');
+        input.disabled = false;
+        if (!code) {
+          state.textContent = '未使用';
+        } else if (conn && conn.open) {
+          row.classList.add('used');
+          input.disabled = true;
+          state.textContent = '使用中';
+        } else if (conn) {
+          row.classList.add('connecting');
+          state.textContent = '連線中';
+        } else {
+          state.textContent = '待連線';
+        }
+      });
+    }
+
+    function orderedParticipants() {
+      const tiles = Array.from(stage.querySelectorAll('.participant'));
+      tiles.sort((a, b) => a.dataset.peerCode.localeCompare(b.dataset.peerCode));
+      const localIndex = tiles.findIndex(tile => tile.dataset.local === '1');
+      if (localIndex >= 0 && config.localLeft) tiles.unshift(tiles.splice(localIndex, 1)[0]);
+      else if (localIndex >= 0 && config.localRight) tiles.push(tiles.splice(localIndex, 1)[0]);
+      return tiles;
+    }
+
+    function prepareTileForLayout(tile) {
+      const enlarged = tile.dataset.local === '1' && config.localLarge;
+      tile.style.width = enlarged ? '600px' : '300px';
+      tile.style.height = enlarged ? '600px' : '300px';
+      tile.style.gridColumn = '';
+      tile.style.gridRow = '';
+      tile.style.alignSelf = '';
+      tile.style.justifySelf = '';
+      return enlarged;
+    }
+
+    function applyLayout() {
+      const tiles = orderedParticipants();
+      tiles.forEach(tile => stage.appendChild(tile));
+      stage.style.display = 'grid';
+      stage.style.gridAutoFlow = 'row';
+      stage.style.gridTemplateColumns = '';
+      stage.style.gridTemplateRows = '';
+      stage.style.width = '300px';
+      stage.style.height = '300px';
+      if (!tiles.length) return;
+
+      const mode = config.layout || 'double-horizontal';
+      if (mode === 'horizontal') {
+        let column = 1;
+        tiles.forEach(tile => {
+          const units = prepareTileForLayout(tile) ? 2 : 1;
+          tile.style.gridColumn = `${column} / span ${units}`;
+          tile.style.gridRow = '1';
+          tile.style.alignSelf = 'end';
+          column += units;
+        });
+        stage.style.gridTemplateColumns = `repeat(${column - 1}, 300px)`;
+        stage.style.gridTemplateRows = config.localLarge ? '600px' : '300px';
+        stage.style.width = `${(column - 1) * 300}px`;
+        stage.style.height = config.localLarge ? '600px' : '300px';
+        return;
+      }
+
+      if (mode === 'vertical') {
+        let row = 1;
+        tiles.forEach(tile => {
+          const units = prepareTileForLayout(tile) ? 2 : 1;
+          tile.style.gridColumn = '1';
+          tile.style.gridRow = `${row} / span ${units}`;
+          tile.style.justifySelf = 'center';
+          row += units;
+        });
+        stage.style.gridTemplateColumns = config.localLarge ? '600px' : '300px';
+        stage.style.gridTemplateRows = `repeat(${row - 1}, 300px)`;
+        stage.style.width = config.localLarge ? '600px' : '300px';
+        stage.style.height = `${(row - 1) * 300}px`;
+        return;
+      }
+
+      if (mode === 'double-vertical') {
+        let row = 1;
+        let column = 1;
+        tiles.forEach(tile => {
+          const enlarged = prepareTileForLayout(tile);
+          if (enlarged) {
+            if (column === 2) { row++; column = 1; }
+            tile.style.gridColumn = '1 / span 2';
+            tile.style.gridRow = `${row} / span 2`;
+            row += 2;
+          } else {
+            tile.style.gridColumn = String(column);
+            tile.style.gridRow = String(row);
+            if (column === 1) column = 2;
+            else { column = 1; row++; }
+          }
+        });
+        const rows = Math.max(1, row - (column === 1 ? 1 : 0));
+        stage.style.gridTemplateColumns = 'repeat(2, 300px)';
+        stage.style.gridTemplateRows = `repeat(${rows}, 300px)`;
+        stage.style.width = '600px';
+        stage.style.height = `${rows * 300}px`;
+        return;
+      }
+
+      let column = 1;
+      let row = 1;
+      tiles.forEach(tile => {
+        const enlarged = prepareTileForLayout(tile);
+        if (enlarged) {
+          if (row === 2) { column++; row = 1; }
+          tile.style.gridColumn = `${column} / span 2`;
+          tile.style.gridRow = '1 / span 2';
+          column += 2;
+        } else {
+          tile.style.gridColumn = String(column);
+          tile.style.gridRow = String(row);
+          if (row === 1) row = 2;
+          else { row = 1; column++; }
+        }
+      });
+      const columns = Math.max(1, column - (row === 1 ? 1 : 0));
+      stage.style.gridTemplateColumns = `repeat(${columns}, 300px)`;
+      stage.style.gridTemplateRows = 'repeat(2, 300px)';
+      stage.style.width = `${columns * 300}px`;
+      stage.style.height = '600px';
+    }
+
+    function createParticipant(code, isLocal = false) {
+      let tile = stage.querySelector(`[data-peer-code="${code}"]`);
+      if (tile) return tile;
+      tile = document.createElement('div');
+      tile.className = 'participant';
+      tile.dataset.peerCode = code;
+      tile.dataset.local = isLocal ? '1' : '0';
+      for (let i = 1; i <= 4; i++) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.dataset.slot = String(i);
+        if (i === 1) img.classList.add('active');
+        tile.appendChild(img);
+      }
+      const label = document.createElement('span');
+      label.className = 'peer-label';
+      label.textContent = (isLocal ? '自己 ' : '') + code;
+      tile.appendChild(label);
+      stage.appendChild(tile);
+      applyLayout();
+      return tile;
+    }
+
+    function removeParticipant(code) {
+      if (code === ownCode) return;
+      const tile = stage.querySelector(`[data-peer-code="${code}"]`);
+      if (tile) tile.remove();
+      applyLayout();
+      updateConnectionStatus();
+    }
+
+    function setParticipantImage(code, slot, dataUrl) {
+      const tile = createParticipant(code, code === ownCode);
+      const img = tile.querySelector(`img[data-slot="${slot}"]`);
+      if (!img) return;
+      if (dataUrl) {
+        img.src = dataUrl;
+        img.hidden = false;
+      } else {
+        img.removeAttribute('src');
+        img.hidden = true;
+      }
+    }
+
+    function showParticipantState(code, slot) {
+      const tile = createParticipant(code, code === ownCode);
+      tile.querySelectorAll('img').forEach(img => img.classList.toggle('active', Number(img.dataset.slot) === slot));
+    }
+
+    function updateThumb(slot, dataUrl) {
+      const card = document.querySelector(`.image-card[data-slot="${slot}"]`);
+      const img = card.querySelector('.thumb img');
+      const empty = card.querySelector('.thumb span');
+      if (dataUrl) {
+        img.src = dataUrl;
+        img.hidden = false;
+        empty.hidden = true;
+      } else {
+        img.hidden = true;
+        empty.hidden = false;
+      }
+    }
+
+    async function loadLocalImages() {
+      for (let slot = 1; slot <= 4; slot++) {
+        try {
+          const record = await dbGet('local:' + slot);
+          if (record && record.dataUrl) {
+            localImages[slot - 1] = record.dataUrl;
+            localRevisions[slot - 1] = Number(record.revision) || 0;
+            setParticipantImage(ownCode, slot, record.dataUrl);
+            updateThumb(slot, record.dataUrl);
+          }
+        } catch (error) {
+          setMessage('讀取縮圖失敗：' + error.message, true);
+        }
+      }
+      showParticipantState(ownCode, localState);
+    }
+
+    async function imageElementFromFile(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = url;
+        await img.decode();
+        return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) };
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        throw error;
+      }
+    }
+
+    async function resizeImage(file) {
+      let decoded;
+      if (window.createImageBitmap) {
+        try {
+          const bitmap = await createImageBitmap(file);
+          decoded = { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+        } catch (_) {}
+      }
+      if (!decoded) decoded = await imageElementFromFile(file);
+      if (!decoded.width || !decoded.height) {
+        decoded.close();
+        throw new Error('圖片尺寸無效');
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 300;
+      canvas.height = 300;
+      const ctx = canvas.getContext('2d', { alpha: true });
+      ctx.clearRect(0, 0, 300, 300);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      const scale = Math.min(300 / decoded.width, 300 / decoded.height);
+      const width = Math.max(1, Math.round(decoded.width * scale));
+      const height = Math.max(1, Math.round(decoded.height * scale));
+      const x = Math.round((300 - width) / 2);
+      const y = Math.round((300 - height) / 2);
+      ctx.drawImage(decoded.source, x, y, width, height);
+      decoded.close();
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(value => value ? resolve(value) : reject(new Error('縮圖產生失敗')), 'image/webp', .9);
+      });
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('縮圖讀取失敗'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function handleLocalImage(slot, input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      setMessage(`正在將圖片 ${slot} 縮成 300×300…`);
+      try {
+        const dataUrl = await resizeImage(file);
+        const revision = Date.now() * 10 + slot;
+        localImages[slot - 1] = dataUrl;
+        localRevisions[slot - 1] = revision;
+        await dbSet('local:' + slot, { dataUrl, revision });
+        setParticipantImage(ownCode, slot, dataUrl);
+        updateThumb(slot, dataUrl);
+        broadcastManifest();
+        setMessage(`圖片 ${slot} 已完成：只保留 300×300 縮圖。`);
+      } catch (error) {
+        setMessage(`圖片 ${slot} 處理失敗：${error.message}`, true);
+      } finally {
+        input.value = '';
+      }
+    }
+
+    function determineState(percent) {
+      let state = 1;
+      config.thresholds.forEach((threshold, index) => {
+        if (percent >= threshold) state = index + 1;
+      });
+      return state;
+    }
+
+    function setLocalLevel(percent) {
+      const next = determineState(percent);
+      if (next === localState) return;
+      localState = next;
+      showParticipantState(ownCode, localState);
+      broadcast({ type: 'p', value: localState });
+    }
+
+    function liveMemberCodes() {
+      return [ownCode, ...Array.from(connections.entries()).filter(([, conn]) => conn && conn.open).map(([code]) => code)]
+        .filter((code, index, array) => array.indexOf(code) === index)
+        .slice(0, MAX_PARTICIPANTS);
+    }
+
+    function helloMessage() {
+      return {
+        type: 'hello',
+        protocol: 2,
+        code: ownCode,
+        members: liveMemberCodes(),
+        revisions: localRevisions.slice(),
+        state: localState
+      };
+    }
+
+    function safeSend(conn, data) {
+      if (!conn || !conn.open) return false;
+      try { conn.send(data); return true; }
+      catch (_) { return false; }
+    }
+
+    function broadcast(data, exceptCode = '') {
+      connections.forEach((conn, code) => {
+        if (code !== exceptCode) safeSend(conn, data);
+      });
+    }
+
+    function broadcastHello() { broadcast(helloMessage()); }
+    function broadcastManifest() {
+      broadcast({ type: 'manifest', revisions: localRevisions.slice(), state: localState });
+    }
+
+    function updateConnectionStatus() {
+      const online = Array.from(connections.entries()).filter(([, conn]) => conn && conn.open).map(([code]) => code).sort();
+      peerStatus.textContent = peerReady ? `WebRTC 已就緒；已用 ${online.length}／9 個位址` : 'WebRTC 準備中';
+      setDot(peerDot, peerReady ? (online.length ? 'ok' : 'wait') : 'bad');
+      connectionsText.textContent = '目前成員：' + [ownCode + '（自己）', ...online].join('、');
+      updateAddressSlots();
+    }
+
+    function considerPeer(code, manual = false) {
+      code = normalizeCode(code);
+      if (!code || code === ownCode) return;
+      // 已知名單可暫存離線者；真正的 9 個他人位址上限在連線開啟時判斷。
+      if (!knownPeers.has(code) && knownPeers.size >= 36) return;
+      knownPeers.add(code);
+      const existing = connections.get(code);
+      if (existing && (existing.open || existing.peerConnection)) return;
+      if (!peerReady || !peer) return;
+      if (manual || ownCode.localeCompare(code) < 0) connectToPeer(code);
+    }
+
+    function connectToPeer(code) {
+      code = normalizeCode(code);
+      if (!code || code === ownCode || !peerReady || !peer) return;
+      const existing = connections.get(code);
+      if (existing && (existing.open || existing.peerConnection)) return;
+      try {
+        const conn = peer.connect(fullPeerId(code), { reliable: true, serialization: 'json', metadata: { app: 'anshaer-avatar-v2' } });
+        setupConnection(conn, false);
+      } catch (error) {
+        setMessage(`無法連接 ${code}：${error.message}`, true);
+      }
+    }
+
+    function setupConnection(conn, incoming) {
+      const code = codeFromPeerId(conn.peer);
+      if (!code || code === ownCode) {
+        try { conn.close(); } catch (_) {}
+        return;
+      }
+      const liveCount = Array.from(connections.values()).filter(item => item && item.open).length;
+      if (!connections.has(code) && liveCount >= MAX_PARTICIPANTS - 1) {
+        conn.on('open', () => {
+          safeSend(conn, { type: 'full' });
+          conn.close();
+        });
+        return;
+      }
+      knownPeers.add(code);
+
+      const existing = connections.get(code);
+      if (existing && existing !== conn) {
+        const preferIncoming = ownCode.localeCompare(code) > 0;
+        const keepExisting = (incoming && !preferIncoming) || (!incoming && preferIncoming);
+        if (keepExisting) {
+          try { conn.close(); } catch (_) {}
+          return;
+        }
+        try { existing.close(); } catch (_) {}
+      }
+      connections.set(code, conn);
+      updateAddressSlots();
+
+      conn.on('open', () => {
+        const otherLive = Array.from(connections.entries()).filter(([otherCode, item]) => otherCode !== code && item && item.open).length;
+        if (otherLive >= MAX_REMOTE_PEERS || assignAddress(code) < 0) {
+          safeSend(conn, { type: 'full' });
+          conn.close();
+          return;
+        }
+        clearTimeout(reconnectTimers.get(code));
+        reconnectTimers.delete(code);
+        createParticipant(code, false);
+        safeSend(conn, helloMessage());
+        broadcastHello();
+        updateConnectionStatus();
+      });
+
+      conn.on('data', data => handlePeerData(code, conn, data));
+      conn.on('error', error => setMessage(`與 ${code} 的連線錯誤：${error.message || error.type || '未知錯誤'}`, true));
+      conn.on('close', () => {
+        if (connections.get(code) !== conn) return;
+        connections.delete(code);
+        updateConnectionStatus();
+        setTimeout(() => {
+          const replacement = connections.get(code);
+          if (!replacement || !replacement.open) removeParticipant(code);
+        }, 1500);
+        schedulePeerReconnect(code);
+        broadcastHello();
+      });
+    }
+
+    function schedulePeerReconnect(code) {
+      clearTimeout(reconnectTimers.get(code));
+      const timer = setTimeout(() => {
+        reconnectTimers.delete(code);
+        if (ownCode.localeCompare(code) < 0 || config.seeds.includes(code)) connectToPeer(code);
+      }, 3000);
+      reconnectTimers.set(code, timer);
+    }
+
+    async function handleManifest(code, revisions, state, conn) {
+      const cleanRevisions = [0, 1, 2, 3].map(index => Number(revisions && revisions[index]) || 0);
+      let profile = remoteProfiles.get(code);
+      if (!profile) profile = { revisions: [0, 0, 0, 0], images: [null, null, null, null], state: 1 };
+      profile.revisions = cleanRevisions;
+      profile.state = clamp(state || profile.state || 1, 1, 4);
+      remoteProfiles.set(code, profile);
+      createParticipant(code, false);
+      showParticipantState(code, profile.state);
+
+      const missing = [];
+      for (let index = 0; index < 4; index++) {
+        const revision = cleanRevisions[index];
+        if (!revision) {
+          profile.images[index] = null;
+          setParticipantImage(code, index + 1, null);
+          continue;
+        }
+        try {
+          const cached = await dbGet(`remote:${code}:${revision}:${index + 1}`);
+          if (profile.revisions[index] !== revision) continue;
+          if (cached && cached.dataUrl) {
+            profile.images[index] = cached.dataUrl;
+            setParticipantImage(code, index + 1, cached.dataUrl);
+          } else {
+            missing.push(index + 1);
+          }
+        } catch (_) {
+          missing.push(index + 1);
+        }
+      }
+      if (missing.length) safeSend(conn || connections.get(code), { type: 'image-request', slots: missing });
+    }
+
+    async function sendImage(conn, slot) {
+      const dataUrl = localImages[slot - 1];
+      const revision = localRevisions[slot - 1];
+      if (!dataUrl || !revision || !conn.open) return;
+      const total = Math.ceil(dataUrl.length / CHUNK_SIZE);
+      safeSend(conn, { type: 'image-start', slot, revision, total });
+      for (let index = 0; index < total; index++) {
+        if (!conn.open) return;
+        safeSend(conn, { type: 'image-chunk', slot, revision, index, data: dataUrl.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE) });
+        if (index % 8 === 7) await new Promise(resolve => setTimeout(resolve, 8));
+      }
+      safeSend(conn, { type: 'image-end', slot, revision });
+    }
+
+    async function handlePeerData(code, conn, data) {
+      if (!data || typeof data !== 'object') return;
+      switch (data.type) {
+        case 'hello': {
+          const claimed = normalizeCode(data.code);
+          if (claimed && claimed !== code) return;
+          await handleManifest(code, data.revisions, data.state, conn);
+          const members = Array.isArray(data.members) ? data.members : [];
+          members.forEach(member => considerPeer(member, false));
+          break;
+        }
+        case 'members':
+          (Array.isArray(data.members) ? data.members : []).forEach(member => considerPeer(member, false));
+          break;
+        case 'manifest':
+          await handleManifest(code, data.revisions, data.state, conn);
+          break;
+        case 'p': {
+          const state = clamp(data.value, 1, 4);
+          let profile = remoteProfiles.get(code) || { revisions: [0, 0, 0, 0], images: [null, null, null, null], state: 1 };
+          profile.state = state;
+          remoteProfiles.set(code, profile);
+          showParticipantState(code, state);
+          break;
+        }
+        case 'image-request': {
+          const slots = (Array.isArray(data.slots) ? data.slots : []).map(Number).filter(slot => slot >= 1 && slot <= 4);
+          for (const slot of slots) await sendImage(conn, slot);
+          break;
+        }
+        case 'image-start': {
+          const slot = clamp(data.slot, 1, 4);
+          const revision = Number(data.revision) || 0;
+          const total = clamp(data.total, 1, 500);
+          incomingImages.set(`${code}:${slot}:${revision}`, { code, slot, revision, total, chunks: new Array(total) });
+          break;
+        }
+        case 'image-chunk': {
+          const slot = clamp(data.slot, 1, 4);
+          const revision = Number(data.revision) || 0;
+          const transfer = incomingImages.get(`${code}:${slot}:${revision}`);
+          const index = Number(data.index);
+          if (transfer && Number.isInteger(index) && index >= 0 && index < transfer.total && typeof data.data === 'string') {
+            transfer.chunks[index] = data.data;
+          }
+          break;
+        }
+        case 'image-end': {
+          const slot = clamp(data.slot, 1, 4);
+          const revision = Number(data.revision) || 0;
+          const key = `${code}:${slot}:${revision}`;
+          const transfer = incomingImages.get(key);
+          incomingImages.delete(key);
+          if (!transfer || transfer.chunks.some(chunk => typeof chunk !== 'string')) return;
+          const dataUrl = transfer.chunks.join('');
+          if (!dataUrl.startsWith('data:image/') || dataUrl.length > 3000000) return;
+          let profile = remoteProfiles.get(code) || { revisions: [0, 0, 0, 0], images: [null, null, null, null], state: 1 };
+          if (profile.revisions[slot - 1] && profile.revisions[slot - 1] !== revision) return;
+          profile.revisions[slot - 1] = revision;
+          profile.images[slot - 1] = dataUrl;
+          remoteProfiles.set(code, profile);
+          setParticipantImage(code, slot, dataUrl);
+          try { await dbSet(`remote:${code}:${revision}:${slot}`, { dataUrl }); } catch (_) {}
+          break;
+        }
+        case 'full':
+          setMessage('對方的 9 個他人連接位址已滿。', true);
+          break;
+      }
+    }
+
+    function connectSeedCodes() {
+      readAndSaveControls();
+      const seeds = config.seeds.filter(Boolean);
+      if (!seeds.length) {
+        setMessage('請至少輸入一個他人連接碼。', true);
+        return;
+      }
+      seeds.forEach(code => considerPeer(code, true));
+      setMessage('已送出連線要求。');
+    }
+
+    function startPeer() {
+      clearTimeout(peerRestartTimer);
+      if (!window.Peer) {
+        peerReady = false;
+        peerStatus.textContent = 'PeerJS 載入失敗，請確認網路';
+        setDot(peerDot, 'bad');
+        peerRestartTimer = setTimeout(startPeer, 5000);
+        return;
+      }
+      if (peer && !peer.destroyed) {
+        try { peer.destroy(); } catch (_) {}
+      }
+      peerReady = false;
+      updateConnectionStatus();
+      peer = new Peer(fullPeerId(ownCode), { debug: 1 });
+      peer.on('open', () => {
+        peerReady = true;
+        setMessage('WebRTC 連接碼已就緒。');
+        updateConnectionStatus();
+        config.seeds.filter(Boolean).forEach(code => considerPeer(code, true));
+      });
+      peer.on('connection', conn => setupConnection(conn, true));
+      peer.on('disconnected', () => {
+        peerReady = false;
+        updateConnectionStatus();
+        setTimeout(() => {
+          try { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); } catch (_) {}
+        }, 1500);
+      });
+      peer.on('close', () => {
+        peerReady = false;
+        updateConnectionStatus();
+        peerRestartTimer = setTimeout(startPeer, 3000);
+      });
+      peer.on('error', error => {
+        const type = error && error.type;
+        if (type === 'unavailable-id') {
+          const oldCode = ownCode;
+          ownCode = '';
+          localStorage.removeItem(CODE_KEY);
+          ownCode = loadOwnCode();
+          ownCodeInput.value = ownCode;
+          const oldTile = stage.querySelector(`[data-peer-code="${oldCode}"]`);
+          if (oldTile) oldTile.remove();
+          createParticipant(ownCode, true);
+          localImages.forEach((dataUrl, index) => setParticipantImage(ownCode, index + 1, dataUrl));
+          showParticipantState(ownCode, localState);
+          setMessage('原連接碼正在被使用，已自動換成新連接碼。', true);
+          peerRestartTimer = setTimeout(startPeer, 300);
+          return;
+        }
+        if (type !== 'peer-unavailable') setMessage('WebRTC：' + (error.message || type || '連線錯誤'), true);
+      });
+    }
+
+    function utf8Bytes(str) {
+      if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+      const bytes = [];
+      for (const symbol of String(str)) {
+        const code = symbol.codePointAt(0);
+        if (code <= 0x7f) bytes.push(code);
+        else if (code <= 0x7ff) bytes.push(0xc0 | (code >>> 6), 0x80 | (code & 0x3f));
+        else if (code <= 0xffff) bytes.push(0xe0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+        else bytes.push(0xf0 | (code >>> 18), 0x80 | ((code >>> 12) & 0x3f), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+      }
+      return Uint8Array.from(bytes);
+    }
+
+    function rotateRight(value, amount) { return (value >>> amount) | (value << (32 - amount)); }
+
+    function sha256WithoutWebCrypto(str) {
+      const constants = new Uint32Array([
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+      ]);
+      const bytes = utf8Bytes(String(str));
+      const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+      const padded = new Uint8Array(paddedLength);
+      padded.set(bytes);
+      padded[bytes.length] = 0x80;
+      const view = new DataView(padded.buffer);
+      const bitLength = bytes.length * 8;
+      view.setUint32(paddedLength - 8, Math.floor(bitLength / 0x100000000), false);
+      view.setUint32(paddedLength - 4, bitLength >>> 0, false);
+      let h0=0x6a09e667,h1=0xbb67ae85,h2=0x3c6ef372,h3=0xa54ff53a,h4=0x510e527f,h5=0x9b05688c,h6=0x1f83d9ab,h7=0x5be0cd19;
+      const words = new Uint32Array(64);
+      for (let offset = 0; offset < paddedLength; offset += 64) {
+        for (let i = 0; i < 16; i++) words[i] = view.getUint32(offset + i * 4, false);
+        for (let i = 16; i < 64; i++) {
+          const s0 = rotateRight(words[i-15],7) ^ rotateRight(words[i-15],18) ^ (words[i-15] >>> 3);
+          const s1 = rotateRight(words[i-2],17) ^ rotateRight(words[i-2],19) ^ (words[i-2] >>> 10);
+          words[i] = (words[i-16] + s0 + words[i-7] + s1) >>> 0;
+        }
+        let a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,h=h7;
+        for (let i = 0; i < 64; i++) {
+          const sum1 = rotateRight(e,6) ^ rotateRight(e,11) ^ rotateRight(e,25);
+          const choice = (e & f) ^ (~e & g);
+          const temp1 = (h + sum1 + choice + constants[i] + words[i]) >>> 0;
+          const sum0 = rotateRight(a,2) ^ rotateRight(a,13) ^ rotateRight(a,22);
+          const majority = (a & b) ^ (a & c) ^ (b & c);
+          const temp2 = (sum0 + majority) >>> 0;
+          h=g; g=f; f=e; e=(d+temp1)>>>0; d=c; c=b; b=a; a=(temp1+temp2)>>>0;
+        }
+        h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+        h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+      }
+      const result = new Uint8Array(32);
+      const resultView = new DataView(result.buffer);
+      [h0,h1,h2,h3,h4,h5,h6,h7].forEach((value,index) => resultView.setUint32(index*4,value,false));
+      let binary = '';
+      result.forEach(byte => { binary += String.fromCharCode(byte); });
+      return btoa(binary);
+    }
+
+    async function sha256(str) {
+      if (window.crypto && window.crypto.subtle && typeof TextEncoder !== 'undefined') {
+        try {
+          const buffer = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+          return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+        } catch (_) {}
+      }
+      return sha256WithoutWebCrypto(str);
+    }
+
+    function mulToPercent(mul) {
+      if (!Number.isFinite(mul) || mul <= 0.00001) return 0;
+      const db = 20 * Math.log10(mul);
+      if (db <= -60) return 0;
+      if (db >= 0) return 100;
+      return Math.round((db + 60) / 60 * 100);
+    }
+
+    function getInputLevel(input) {
+      const channels = input && input.inputLevelsMul;
+      if (!Array.isArray(channels)) return 0;
+      let max = 0;
+      channels.forEach(channel => {
+        if (!Array.isArray(channel)) return;
+        channel.slice(0, 2).forEach(value => {
+          value = Number(value);
+          if (Number.isFinite(value)) max = Math.max(max, value);
+        });
+      });
+      return max;
+    }
+
+    function updateObsTrackOptions(inputs) {
+      if (!Array.isArray(inputs)) return;
+      const select = document.getElementById('obsTrack');
+      const selected = config.obsTrack || select.value;
+      inputs.forEach(input => {
+        const name = String(input && input.inputName || '').trim();
+        if (!name || knownObsTracks.has(name)) return;
+        knownObsTracks.add(name);
+        ensureSelectOption(select, name, name);
+      });
+      if (selected) {
+        ensureSelectOption(select, selected, selected);
+        select.value = selected;
+      }
+    }
+
+    function getTrackedObsLevel(inputs) {
+      if (!Array.isArray(inputs)) return 0;
+      updateObsTrackOptions(inputs);
+      if (config.obsTrack) {
+        const selected = inputs.find(input => String(input && input.inputName || '').trim() === config.obsTrack);
+        return selected ? getInputLevel(selected) : 0;
+      }
+      return inputs.reduce((value, input) => Math.max(value, getInputLevel(input)), 0);
+    }
+
+    function stopObs() {
+      obsGeneration++;
+      clearTimeout(obsReconnectTimer);
+      obsReconnectTimer = 0;
+      if (obsSocket) {
+        try { obsSocket.onclose = null; obsSocket.close(); } catch (_) {}
+      }
+      obsSocket = null;
+    }
+
+    function stopMic() {
+      cancelAnimationFrame(micAnimationFrame);
+      micAnimationFrame = 0;
+      if (micStream) micStream.getTracks().forEach(track => track.stop());
+      micStream = null;
+      if (micAudioContext) micAudioContext.close().catch(() => {});
+      micAudioContext = null;
+    }
+
+    async function refreshMicDevices() {
+      const select = document.getElementById('micDevice');
+      const selected = config.micDevice || select.value;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+        throw new Error('此瀏覽器無法列出麥克風');
+      }
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+      select.replaceChildren(new Option('系統預設麥克風', ''));
+      devices.forEach((device, index) => {
+        if (!device.deviceId) return;
+        const label = device.label || `麥克風 ${index + 1}（啟用權限後顯示名稱）`;
+        select.add(new Option(label, device.deviceId));
+      });
+      if (selected) {
+        ensureSelectOption(select, selected, '上次選擇的麥克風');
+        select.value = selected;
+      }
+      return devices;
+    }
+
+    async function startMic() {
+      stopObs();
+      stopMic();
+      obsStatus.textContent = '正在請求麥克風權限…';
+      setDot(obsDot, 'wait');
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('此頁面環境不允許讀取麥克風；手機請使用 HTTPS 開啟');
+        }
+        const audio = config.micDevice ? {
+          deviceId: { exact: config.micDevice },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        } : {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        };
+        micStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+        await refreshMicDevices();
+        const track = micStream.getAudioTracks()[0];
+        if (track) {
+          const actualId = track.getSettings && track.getSettings().deviceId;
+          if (actualId && !config.micDevice) {
+            document.getElementById('micDevice').value = actualId;
+          }
+          track.addEventListener('ended', () => {
+            if (!micStream) return;
+            stopMic();
+            obsStatus.textContent = '非 OBS 麥克風已停止';
+            setDot(obsDot, 'bad');
+          });
+        }
+
+        micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyser = micAudioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = .22;
+        micAudioContext.createMediaStreamSource(micStream).connect(analyser);
+        const samples = new Float32Array(analyser.fftSize);
+        if (micAudioContext.state === 'suspended') await micAudioContext.resume();
+
+        config.audioMode = 'mic';
+        persistConfig();
+        const label = track && track.label ? track.label : '選擇的麥克風';
+        obsStatus.textContent = `非 OBS 音軌已啟用：${label}`;
+        setDot(obsDot, 'ok');
+
+        const render = () => {
+          if (!micStream || !micAudioContext) return;
+          analyser.getFloatTimeDomainData(samples);
+          let sum = 0;
+          for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+          const rms = Math.sqrt(sum / samples.length);
+          setLocalLevel(mulToPercent(rms));
+          micAnimationFrame = requestAnimationFrame(render);
+        };
+        render();
+      } catch (error) {
+        stopMic();
+        obsStatus.textContent = '非 OBS 麥克風啟用失敗';
+        setDot(obsDot, 'bad');
+        setMessage('麥克風啟用失敗：' + (error.message || error.name), true);
+      }
+    }
+
+    function startObs() {
+      stopMic();
+      const generation = ++obsGeneration;
+      clearTimeout(obsReconnectTimer);
+      if (obsSocket) {
+        try { obsSocket.onclose = null; obsSocket.close(); } catch (_) {}
+      }
+      const host = String(config.obsHost || '127.0.0.1').replace(/^wss?:\/\//i, '').replace(/\/$/, '');
+      const url = `ws://${host}:${config.obsPort}`;
+      obsStatus.textContent = 'OBS 連線中…';
+      setDot(obsDot, 'wait');
+      try {
+        obsSocket = new WebSocket(url);
+      } catch (error) {
+        obsStatus.textContent = 'OBS 位址無效';
+        setDot(obsDot, 'bad');
+        obsReconnectTimer = setTimeout(startObs, 3000);
+        return;
+      }
+
+      obsSocket.onmessage = async event => {
+        if (generation !== obsGeneration) return;
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.op === 0) {
+            const identify = { rpcVersion: 1, eventSubscriptions: 65544 };
+            if (msg.d.authentication && config.obsPassword) {
+              const secret = await sha256(config.obsPassword + msg.d.authentication.salt);
+              identify.authentication = await sha256(secret + msg.d.authentication.challenge);
+            }
+            obsSocket.send(JSON.stringify({ op: 1, d: identify }));
+          } else if (msg.op === 2) {
+            obsStatus.textContent = config.obsTrack ? `OBS 已連線：${config.obsTrack}` : 'OBS 已連線：自動抓最大音軌';
+            setDot(obsDot, 'ok');
+          } else if (msg.op === 5 && msg.d.eventType === 'InputVolumeMeters') {
+            const inputs = msg.d.eventData && msg.d.eventData.inputs;
+            setLocalLevel(mulToPercent(getTrackedObsLevel(inputs)));
+          }
+        } catch (error) {
+          obsStatus.textContent = 'OBS 訊息處理失敗';
+          setDot(obsDot, 'bad');
+        }
+      };
+      obsSocket.onerror = () => {
+        obsStatus.textContent = 'OBS 連線失敗';
+        setDot(obsDot, 'bad');
+      };
+      obsSocket.onclose = () => {
+        if (generation !== obsGeneration) return;
+        obsStatus.textContent = 'OBS 已斷線，3 秒後重連';
+        setDot(obsDot, 'bad');
+        if (config.audioMode === 'obs') obsReconnectTimer = setTimeout(startObs, 3000);
+      };
+    }
+
+    function bindEvents() {
+      stage.addEventListener('click', openSettings);
+      panel.addEventListener('click', event => event.stopPropagation());
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeSettings(); });
+      document.addEventListener('click', event => {
+        if (overlay.hidden && event.target !== overlay) openSettings();
+      });
+      document.getElementById('closeBtn').addEventListener('click', closeSettings);
+      document.getElementById('hideBtn').addEventListener('click', closeSettings);
+      document.getElementById('saveBtn').addEventListener('click', () => {
+        readAndSaveControls();
+        config.seeds.filter(Boolean).forEach(code => considerPeer(code, true));
+        setMessage('設定已儲存。');
+        closeSettings();
+      });
+      document.getElementById('obsConnectBtn').addEventListener('click', () => {
+        document.getElementById('audioMode').value = 'obs';
+        readAndSaveControls();
+        startObs();
+        setMessage('已使用目前的 OBS 設定與指定音軌連線。');
+      });
+      document.getElementById('micConnectBtn').addEventListener('click', () => {
+        document.getElementById('audioMode').value = 'mic';
+        readAndSaveControls();
+        startMic();
+      });
+      document.getElementById('refreshMicBtn').addEventListener('click', async () => {
+        try {
+          await refreshMicDevices();
+          setMessage('已重新讀取非 OBS 麥克風清單。');
+        } catch (error) {
+          setMessage(error.message, true);
+        }
+      });
+      document.getElementById('audioMode').addEventListener('change', event => {
+        readAndSaveControls();
+        if (event.currentTarget.value === 'mic') {
+          stopObs();
+          obsStatus.textContent = '請選擇麥克風並按「啟用」';
+          setDot(obsDot, 'wait');
+          refreshMicDevices().catch(() => {});
+        } else {
+          stopMic();
+          obsStatus.textContent = '請按「連線 OBS」';
+          setDot(obsDot, 'wait');
+        }
+      });
+      document.getElementById('obsTrack').addEventListener('change', readAndSaveControls);
+      document.getElementById('micDevice').addEventListener('change', readAndSaveControls);
+      document.getElementById('connectBtn').addEventListener('click', connectSeedCodes);
+      document.getElementById('copyCodeBtn').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(ownCode);
+          setMessage('自己的連接碼已複製。');
+        } catch (_) {
+          ownCodeInput.select();
+          document.execCommand('copy');
+          setMessage('自己的連接碼已複製。');
+        }
+      });
+      document.querySelectorAll('.seed-code').forEach(input => {
+        input.addEventListener('input', () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); });
+        input.addEventListener('keydown', event => { if (event.key === 'Enter') connectSeedCodes(); });
+      });
+      document.getElementById('layoutMode').addEventListener('change', readAndSaveControls);
+      document.getElementById('localLarge').addEventListener('change', readAndSaveControls);
+      document.getElementById('localLeft').addEventListener('change', event => {
+        if (event.currentTarget.checked) document.getElementById('localRight').checked = false;
+        readAndSaveControls();
+      });
+      document.getElementById('localRight').addEventListener('change', event => {
+        if (event.currentTarget.checked) document.getElementById('localLeft').checked = false;
+        readAndSaveControls();
+      });
+      document.querySelectorAll('.image-card').forEach(card => {
+        const slot = Number(card.dataset.slot);
+        card.querySelector('.image-input').addEventListener('change', event => handleLocalImage(slot, event.currentTarget));
+      });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape' && !overlay.hidden) closeSettings(); });
+    }
+
+    async function init() {
+      restoreControls();
+      bindEvents();
+      createParticipant(ownCode, true);
+      await loadLocalImages();
+      if (config.audioMode === 'obs') {
+        startObs();
+      } else {
+        obsStatus.textContent = '請選擇麥克風並按「啟用」';
+        setDot(obsDot, 'wait');
+        refreshMicDevices().catch(() => {});
+      }
+      startPeer();
+      updateConnectionStatus();
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        navigator.mediaDevices.addEventListener('devicechange', () => refreshMicDevices().catch(() => {}));
+      }
+      meshTimer = setInterval(() => {
+        if (!peerReady) return;
+        knownPeers.forEach(code => {
+          const conn = connections.get(code);
+          if ((!conn || !conn.open) && (ownCode.localeCompare(code) < 0 || config.seeds.includes(code))) connectToPeer(code);
+        });
+      }, 6000);
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>
